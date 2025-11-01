@@ -1,6 +1,6 @@
-# Task Service
+# Task Service - flowforge
 
-Task management microservice with workflow automation and assignment capabilities.
+Task management service with workflow automation and assignment capabilities.
 
 ## Quick Start
 
