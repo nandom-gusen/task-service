@@ -1,0 +1,31 @@
+version: '3.8'
+
+# Default docker-compose.yml - uses external dev_loud_network (like account-service)
+services:
+  dev-task-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dev-task-service:1.0
+    container_name: dev-task-service
+    restart: always
+    ports:
+      - "2102:2102"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - SPRING_DATASOURCE_URL=jdbc:h2:mem:taskflowdb
+      - SPRING_H2_CONSOLE_SETTINGS_WEB_ALLOW_OTHERS=true
+      - JAVA_OPTS=-Xmx512m -Xms256m
+    networks:
+      dev_flowforge_network:
+        ipv4_address: 81.12.4.13  # task-service IP (account-service uses .12)
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:2102/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  dev_flowforge_network:
+    external: true
