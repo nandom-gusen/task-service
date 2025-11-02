@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/app/health")
-@Tag(name = "application health resource", description = "Resource for simple none critical application metrics and health")
+@Tag(name = "Application health resource", description = "Resource for simple none critical application metrics and health")
 public class HealthCheckResource {
 
     private final HealthCheckService healthCheckService;
