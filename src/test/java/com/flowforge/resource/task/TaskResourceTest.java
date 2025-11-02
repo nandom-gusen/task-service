@@ -1,193 +1,239 @@
 package com.flowforge.resource.task;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.flowforge.config.SpringDataWebConfig;
 import com.flowforge.dto.request.TaskDTO;
 import com.flowforge.dto.request.UpdateTaskDTO;
 import com.flowforge.dto.response.ApiResponseDto;
 import com.flowforge.dto.response.TaskResponse;
-import com.flowforge.enums.Priority;
 import com.flowforge.enums.TaskStatus;
-import com.flowforge.model.Task;
-import com.flowforge.repository.task.TaskRepository;
+import com.flowforge.security.jwt.JwtUtils;
 import com.flowforge.service.task.TaskService;
-import com.flowforge.service.task.TaskServiceImpl;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.springframework.data.domain.*;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.config.EnableSpringDataWebSupport;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
-import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
+import static org.hamcrest.Matchers.hasSize;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.data.web.config.EnableSpringDataWebSupport.PageSerializationMode.VIA_DTO;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+
+@Import(SpringDataWebConfig.class)
+@WebMvcTest(controllers = TaskResource.class,
+        excludeAutoConfiguration = { org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration.class })
 public class TaskResourceTest {
+    @Autowired
+    private MockMvc mockMvc;
 
-    @Mock
-    private TaskRepository taskRepository;
+    @Autowired
+    private ObjectMapper objectMapper;
 
-    @InjectMocks
-    private TaskServiceImpl taskService;
+    @MockitoBean
+    private com.flowforge.security.jwt.AuthTokenFilter authTokenFilter;
+
+
+    @MockitoBean
+    private TaskService taskService;
 
     @BeforeEach
-    void setUp() {
-        MockitoAnnotations.openMocks(this);
+    void forwardFilterChain() throws Exception {
+        // make the mocked filter call the filter chain so requests reach the controller
+        doAnswer(invocation -> {
+            ServletRequest req = invocation.getArgument(0);
+            ServletResponse res = invocation.getArgument(1);
+            FilterChain chain = invocation.getArgument(2);
+            chain.doFilter(req, res); // important: forward the request
+            return null;
+        }).when(authTokenFilter).doFilter(any(ServletRequest.class), any(ServletResponse.class), any(FilterChain.class));
     }
 
     @Test
-    void createTask_shouldCreateAndReturnTask() {
+    void createTask_shouldReturnCreatedTask() throws Exception {
         // Arrange
         TaskDTO taskDTO = new TaskDTO();
-        taskDTO.setTitle("Test Task");
-        taskDTO.setDescription("Test Description");
+        taskDTO.setTitle("New Task");
+        taskDTO.setDescription("Task Description");
         taskDTO.setStatus("TODO");
         taskDTO.setPriority("HIGH");
 
-        Task task = new Task();
-        task.setId(1L);
-        task.setTitle("Test Task");
-        task.setDescription("Test Description");
-        task.setStatus(TaskStatus.TODO);
-        task.setPriority(Priority.HIGH);
-        task.setCreatedAt(LocalDateTime.now());
+        TaskResponse taskResponse = new TaskResponse();
+        taskResponse.setId(1L);
+        taskResponse.setTitle("New Task");
+        taskResponse.setDescription("Task Description");
+        taskResponse.setStatus(TaskStatus.TODO.label);
+        taskResponse.setCreatedAt(LocalDateTime.now());
 
-        when(taskRepository.save(any(Task.class))).thenReturn(task);
+        ApiResponseDto<TaskResponse> apiResponse = new ApiResponseDto<>(
+                true,
+                HttpStatus.CREATED.value(),
+                HttpStatus.CREATED,
+                "Success",
+                taskResponse
+        );
 
-        // Act
-        ResponseEntity<ApiResponseDto<TaskResponse>> response = taskService.createTask(taskDTO);
+        when(taskService.createTask(any(TaskDTO.class)))
+                .thenReturn(org.springframework.http.ResponseEntity.status(HttpStatus.CREATED).body(apiResponse));
 
-        // Assert
-        assertNotNull(response);
-        assertEquals(HttpStatus.CREATED, response.getStatusCode());
-        assertNotNull(response.getBody());
-        assertTrue(response.getBody().getSuccess());
-        assertEquals(HttpStatus.CREATED, response.getBody().getStatus());
+        // Act & Assert
+        mockMvc.perform(post("/api/v1/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(taskDTO)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value(HttpStatus.CREATED.name()))
+                .andExpect(jsonPath("$.data.id").value(1))
+                .andExpect(jsonPath("$.data.title").value("New Task"))
+                .andExpect(jsonPath("$.data.description").value("Task Description"))
+                .andExpect(jsonPath("$.data.status").value("TODO"));
 
-        TaskResponse taskResponse = response.getBody().getData();
-        assertNotNull(taskResponse);
-        assertEquals("Test Task", taskResponse.getTitle());
-        assertEquals("Test Description", taskResponse.getDescription());
-
-        verify(taskRepository, times(1)).save(any(Task.class));
+        verify(taskService, times(1)).createTask(any(TaskDTO.class));
     }
 
     @Test
-    void getAllTasks_shouldReturnPaginatedTasks() {
+    void getAllTasks_shouldReturnPaginatedTasks() throws Exception {
         // Arrange
-        Task task1 = new Task();
+        TaskResponse task1 = new TaskResponse();
         task1.setId(1L);
         task1.setTitle("Task 1");
-        task1.setStatus(TaskStatus.TODO);
-        task1.setCreatedAt(LocalDateTime.now());
+        task1.setStatus(TaskStatus.TODO.label);
 
-        Task task2 = new Task();
+        TaskResponse task2 = new TaskResponse();
         task2.setId(2L);
         task2.setTitle("Task 2");
-        task2.setStatus(TaskStatus.IN_PROGRESS);
-        task2.setCreatedAt(LocalDateTime.now());
+        task2.setStatus(TaskStatus.IN_PROGRESS.label);
 
-        Page<Task> taskPage = new PageImpl<>(Arrays.asList(task1, task2));
-        Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<TaskResponse> taskPage = new PageImpl<>(Arrays.asList(task1, task2));
 
-        when(taskRepository.findAll(any(Pageable.class))).thenReturn(taskPage);
+        ApiResponseDto<Page<TaskResponse>> apiResponse = new ApiResponseDto<>(
+                true,
+                HttpStatus.OK.value(),
+                HttpStatus.OK,
+                "Success",
+                taskPage
+        );
 
-        // Act
-        ResponseEntity<ApiResponseDto<Page<TaskResponse>>> response =
-                taskService.getAllTasks(0, 20, "createdAt", Sort.Direction.DESC);
+        when(taskService.getAllTasks(anyInt(), anyInt(), anyString(), any(Sort.Direction.class)))
+                .thenReturn(org.springframework.http.ResponseEntity.ok(apiResponse));
 
-        // Assert
-        assertNotNull(response);
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertNotNull(response.getBody());
-        assertTrue(response.getBody().getSuccess());
+        // Act & Assert
+        mockMvc.perform(get("/api/v1/tasks")
+                        .param("page", "0")
+                        .param("size", "20")
+                        .param("sortBy", "createdAt")
+                        .param("sortDir", "DESC"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.status").value(HttpStatus.OK.name()))
+                .andExpect(jsonPath("$.data.content[0].title").value("Task 1"))
+                .andExpect(jsonPath("$.data.content[1].title").value("Task 2"));
 
-        Page<TaskResponse> responsePage = response.getBody().getData();
-        assertNotNull(responsePage);
-        assertEquals(2, responsePage.getContent().size());
-        assertEquals("Task 1", responsePage.getContent().get(0).getTitle());
-        assertEquals("Task 2", responsePage.getContent().get(1).getTitle());
-
-        verify(taskRepository, times(1)).findAll(any(Pageable.class));
+        verify(taskService, times(1)).getAllTasks(0, 20, "createdAt", Sort.Direction.DESC);
     }
 
     @Test
-    void getTaskById_shouldReturnTaskWhenExists() {
+    void getTaskById_shouldReturnTask() throws Exception {
         // Arrange
         Long taskId = 1L;
-        Task task = new Task();
-        task.setId(taskId);
-        task.setTitle("Test Task");
-        task.setDescription("Test Description");
-        task.setStatus(TaskStatus.TODO);
-        task.setCreatedAt(LocalDateTime.now());
+        TaskResponse taskResponse = new TaskResponse();
+        taskResponse.setId(taskId);
+        taskResponse.setTitle("Test Task");
+        taskResponse.setDescription("Test Description");
+        taskResponse.setStatus(TaskStatus.TODO.label);
 
-        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        ApiResponseDto<TaskResponse> apiResponse = new ApiResponseDto<>(
+                true,
+                HttpStatus.OK.value(),
+                HttpStatus.OK,
+                "Success",
+                taskResponse
+        );
 
-        // Act
-        ResponseEntity<ApiResponseDto<TaskResponse>> response = taskService.getTaskById(taskId);
+        when(taskService.getTaskById(taskId))
+                .thenReturn(org.springframework.http.ResponseEntity.ok(apiResponse));
 
-        // Assert
-        assertNotNull(response);
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertNotNull(response.getBody());
-        assertTrue(response.getBody().getSuccess());
+        // Act & Assert
+        mockMvc.perform(get("/api/v1/tasks/{id}", taskId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.status").value(HttpStatus.OK.name()))
+                .andExpect(jsonPath("$.data.id").value(taskId))
+                .andExpect(jsonPath("$.data.title").value("Test Task"))
+                .andExpect(jsonPath("$.data.description").value("Test Description"));
 
-        TaskResponse taskResponse = response.getBody().getData();
-        assertNotNull(taskResponse);
-        assertEquals(taskId, taskResponse.getId());
-        assertEquals("Test Task", taskResponse.getTitle());
-        assertEquals("Test Description", taskResponse.getDescription());
-
-        verify(taskRepository, times(1)).findById(taskId);
+        verify(taskService, times(1)).getTaskById(taskId);
     }
 
     @Test
-    void deleteTask_shouldDeleteTaskWhenExists() {
+    void updateTask_shouldReturnUpdatedTask() throws Exception {
         // Arrange
         Long taskId = 1L;
-
-        Task existingTask = new Task();
-        existingTask.setId(taskId);
-        existingTask.setTitle("Old Title");
-        existingTask.setStatus(TaskStatus.TODO);
-
         UpdateTaskDTO updateDTO = new UpdateTaskDTO();
         updateDTO.setId(taskId);
-        updateDTO.setTitle("Updated Title");
+        updateDTO.setTitle("Updated Task");
         updateDTO.setDescription("Updated Description");
         updateDTO.setStatus("IN_PROGRESS");
 
-        Task updatedTask = new Task();
-        updatedTask.setId(taskId);
-        updatedTask.setTitle("Updated Title");
-        updatedTask.setDescription("Updated Description");
-        updatedTask.setStatus(TaskStatus.IN_PROGRESS);
+        TaskResponse taskResponse = new TaskResponse();
+        taskResponse.setId(taskId);
+        taskResponse.setTitle("Updated Task");
+        taskResponse.setDescription("Updated Description");
+        taskResponse.setStatus(TaskStatus.IN_PROGRESS.label);
 
-        when(taskRepository.findById(taskId)).thenReturn(Optional.of(existingTask));
-        when(taskRepository.save(any(Task.class))).thenReturn(updatedTask);
+        ApiResponseDto<TaskResponse> apiResponse = new ApiResponseDto<>(
+                true,
+                HttpStatus.OK.value(),
+                HttpStatus.OK,
+                "Success",
+                taskResponse
+        );
 
-        // Act
-        ResponseEntity<ApiResponseDto<TaskResponse>> response = taskService.updateTask(taskId, updateDTO);
+        when(taskService.updateTask(eq(taskId), any(UpdateTaskDTO.class)))
+                .thenReturn(org.springframework.http.ResponseEntity.ok(apiResponse));
 
-        // Assert
-        assertNotNull(response);
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertNotNull(response.getBody());
-        assertTrue(response.getBody().getSuccess());
+        // Act & Assert
+        mockMvc.perform(put("/api/v1/tasks/{id}", taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateDTO)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.status").value(HttpStatus.OK.name()))
+                .andExpect(jsonPath("$.data.title").value("Updated Task"))
+                .andExpect(jsonPath("$.data.description").value("Updated Description"))
+                .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
 
-        TaskResponse taskResponse = response.getBody().getData();
-        assertNotNull(taskResponse);
-        assertEquals("Updated Title", taskResponse.getTitle());
-        assertEquals("Updated Description", taskResponse.getDescription());
+        verify(taskService, times(1)).updateTask(eq(taskId), any(UpdateTaskDTO.class));
+    }
 
-        verify(taskRepository, times(1)).findById(taskId);
-        verify(taskRepository, times(1)).save(any(Task.class));
+    @Test
+    void deleteTask_shouldReturnNoContent() throws Exception {
+        // Arrange
+        Long taskId = 1L;
+        when(taskService.deleteTask(taskId))
+                .thenReturn(org.springframework.http.ResponseEntity.noContent().build());
+
+        // Act & Assert
+        mockMvc.perform(delete("/api/v1/tasks/{id}", taskId))
+                .andExpect(status().isNoContent());
+        verify(taskService, times(1)).deleteTask(taskId);
     }
 
 }

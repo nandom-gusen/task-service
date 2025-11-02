@@ -149,43 +149,17 @@ public class TaskServiceTest {
     void deleteTask_shouldDeleteTaskWhenExists() {
         // Arrange
         Long taskId = 1L;
+        Task task = new Task();
+        task.setId(taskId);
 
-        Task existingTask = new Task();
-        existingTask.setId(taskId);
-        existingTask.setTitle("Old Title");
-        existingTask.setStatus(TaskStatus.TODO);
-
-        UpdateTaskDTO updateDTO = new UpdateTaskDTO();
-        updateDTO.setId(taskId);
-        updateDTO.setTitle("Updated Title");
-        updateDTO.setDescription("Updated Description");
-        updateDTO.setStatus("IN_PROGRESS");
-
-        Task updatedTask = new Task();
-        updatedTask.setId(taskId);
-        updatedTask.setTitle("Updated Title");
-        updatedTask.setDescription("Updated Description");
-        updatedTask.setStatus(TaskStatus.IN_PROGRESS);
-
-        when(taskRepository.findById(taskId)).thenReturn(Optional.of(existingTask));
-        when(taskRepository.save(any(Task.class))).thenReturn(updatedTask);
-
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
         // Act
-        ResponseEntity<ApiResponseDto<TaskResponse>> response = taskService.updateTask(taskId, updateDTO);
+        ResponseEntity<Void> response = taskService.deleteTask(taskId);
 
         // Assert
-        assertNotNull(response);
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertNotNull(response.getBody());
-        assertTrue(response.getBody().getSuccess());
-
-        TaskResponse taskResponse = response.getBody().getData();
-        assertNotNull(taskResponse);
-        assertEquals("Updated Title", taskResponse.getTitle());
-        assertEquals("Updated Description", taskResponse.getDescription());
-
+        assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
         verify(taskRepository, times(1)).findById(taskId);
-        verify(taskRepository, times(1)).save(any(Task.class));
+        verify(taskRepository, times(1)).deleteById(taskId);
     }
 
 }

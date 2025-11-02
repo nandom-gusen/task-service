@@ -17,7 +17,6 @@ public class UpdateTaskDTO implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
 
-    @NotBlank(message = "Id is required")
     private Long id;
     @NotBlank(message = "Title is required")
     private String title;

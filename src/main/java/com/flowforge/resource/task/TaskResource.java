@@ -55,6 +55,7 @@ public class TaskResource {
         return taskService.createTask(taskDTO);
     }
 
+    @GetMapping
     @Operation(
             summary = "Retrieve all tasks with pagination",
             description = "Fetches a paginated list of tasks with support for sorting and filtering. " +
@@ -69,6 +70,7 @@ public class TaskResource {
                     )
             )
     })
+    @ResponseStatus(HttpStatus.OK)
     public ResponseEntity<ApiResponseDto<Page<TaskResponse>>> getAllTasks(
             @Parameter(description = "Page number (zero-based)", example = "0")
             @RequestParam(defaultValue = "0") @Min(0) int page,
@@ -101,12 +103,14 @@ public class TaskResource {
                     )
             )
     })
+    @ResponseStatus(HttpStatus.OK)
     public ResponseEntity<ApiResponseDto<TaskResponse>> getTaskById(
             @Parameter(description = "Task ID", required = true, example = "1")
             @PathVariable Long id
     ) {
         return taskService.getTaskById(id);
     }
+
 
     @PutMapping("/{id}")
     @Operation(
@@ -123,6 +127,7 @@ public class TaskResource {
                     )
             )
     })
+    @ResponseStatus(HttpStatus.OK)
     public ResponseEntity<ApiResponseDto<TaskResponse>> updateTask(
             @Parameter(description = "Task ID", required = true)
             @PathVariable Long id,
@@ -130,6 +135,7 @@ public class TaskResource {
     ) {
         return taskService.updateTask(id, taskDTO);
     }
+
 
     @DeleteMapping("/{id}")
     @Operation(
@@ -142,6 +148,7 @@ public class TaskResource {
                     description = "Task deleted successfully"
             )
     })
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     public ResponseEntity<Void> deleteTask(
             @Parameter(description = "Task ID", required = true)
             @PathVariable Long id
