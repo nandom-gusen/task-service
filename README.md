@@ -17,6 +17,7 @@ docker network create --driver=bridge --subnet=81.12.0.0/16 dev_flowforge_networ
 ```bash
 docker-compose -f ./docker-compose.yml up -d
 ```
+NOTE: Docker build may fail in CI due to network/DNS
 
 ### Stop
 ```bash
