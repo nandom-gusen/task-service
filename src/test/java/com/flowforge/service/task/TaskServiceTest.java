@@ -6,6 +6,8 @@ import com.flowforge.dto.response.ApiResponseDto;
 import com.flowforge.dto.response.TaskResponse;
 import com.flowforge.enums.Priority;
 import com.flowforge.enums.TaskStatus;
+import com.flowforge.exceptions.BadRequestException;
+import com.flowforge.exceptions.RecordNotFoundException;
 import com.flowforge.model.Task;
 import com.flowforge.repository.task.TaskRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -160,6 +162,95 @@ public class TaskServiceTest {
         assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
         verify(taskRepository, times(1)).findById(taskId);
         verify(taskRepository, times(1)).deleteById(taskId);
+    }
+
+    //VALIDATION TESTS
+    @Test
+    void createTask_shouldThrowException_whenRequestBodyIsNull() {
+        // Act & Assert
+        BadRequestException exception = assertThrows(BadRequestException.class, () -> {
+            taskService.createTask(null);
+        });
+
+        assertEquals("Task request body is invalid", exception.getMessage());
+        verify(taskRepository, never()).save(any(Task.class));
+    }
+
+    @Test
+    void createTask_shouldThrowException_whenTitleIsNullRequestBody() {
+        // Arrange
+        TaskDTO taskDTO = new TaskDTO();
+        taskDTO.setTitle(null);
+
+        // Act & Assert
+        BadRequestException exception = assertThrows(BadRequestException.class, () -> {
+            taskService.createTask(taskDTO);
+        });
+
+        assertEquals("Title is required", exception.getMessage());
+        verify(taskRepository, never()).save(any(Task.class));
+    }
+
+    @Test
+    void createTask_shouldThrowException_whenTitleIsTooLargeRequestBody() {
+        // Arrange
+        TaskDTO taskDTO = new TaskDTO();
+        String longTitle = "a".repeat(256); // 256 chars, exceeds 255-char limit
+        taskDTO.setTitle(longTitle);
+
+        // Act & Assert
+        BadRequestException exception = assertThrows(BadRequestException.class, () ->
+                taskService.createTask(taskDTO)
+        );
+
+        assertEquals("Title must not exceed 255 characters", exception.getMessage());
+        verify(taskRepository, never()).save(any(Task.class));
+    }
+
+    @Test
+    void updateTask_shouldThrowException_whenRequestBodyIsNull() {
+        // Act & Assert
+        BadRequestException exception = assertThrows(BadRequestException.class, () -> {
+            taskService.updateTask(1L, null);
+        });
+
+        assertEquals("Task request body is invalid", exception.getMessage());
+        verify(taskRepository, never()).findById(anyLong());
+        verify(taskRepository, never()).save(any(Task.class));
+    }
+
+    @Test
+    void updateTask_shouldThrowException_whenIdIsNullInRequestBody() {
+        // Arrange
+        UpdateTaskDTO updateDTO = new UpdateTaskDTO();
+        updateDTO.setId(null);
+        updateDTO.setTitle("Updated Task");
+
+        // Act & Assert
+        BadRequestException exception = assertThrows(BadRequestException.class, () -> {
+            taskService.updateTask(1L, updateDTO);
+        });
+
+        assertEquals("Task ID is required in request body", exception.getMessage());
+        verify(taskRepository, never()).findById(anyLong());
+        verify(taskRepository, never()).save(any(Task.class));
+    }
+
+    @Test
+    void updateTask_shouldThrowException_whenIdsAreMismatched() {
+        // Arrange
+        UpdateTaskDTO updateDTO = new UpdateTaskDTO();
+        updateDTO.setId(10L);
+        updateDTO.setTitle("Updated Task");
+
+        // Act & Assert
+        BadRequestException exception = assertThrows(BadRequestException.class, () -> {
+            taskService.updateTask(5L, updateDTO);
+        });
+
+        assertEquals("Task request IDs are mismatched", exception.getMessage());
+        verify(taskRepository, never()).findById(anyLong());
+        verify(taskRepository, never()).save(any(Task.class));
     }
 
 }

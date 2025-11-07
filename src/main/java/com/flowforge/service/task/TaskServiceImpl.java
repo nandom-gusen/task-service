@@ -5,6 +5,7 @@ import com.flowforge.dto.request.UpdateTaskDTO;
 import com.flowforge.dto.response.ApiResponseDto;
 import com.flowforge.dto.response.TaskResponse;
 import com.flowforge.exceptions.BadRequestException;
+import com.flowforge.exceptions.RecordNotFoundException;
 import com.flowforge.model.Task;
 import com.flowforge.repository.task.TaskRepository;
 import com.flowforge.utils.EntityMapperUtil;
@@ -34,6 +35,12 @@ public class TaskServiceImpl implements TaskService {
 
     @Override
     public ResponseEntity<ApiResponseDto<TaskResponse>> createTask(TaskDTO taskDTO) {
+
+        if(taskDTO == null){
+            throw new BadRequestException("Task request body is invalid");
+        }
+
+        validateTitle(taskDTO.getTitle());
 
         Task task = EntityMapperUtil.mapTaskDTOtoTask(taskDTO);
         Task savedTask = taskRepository.save(task);
@@ -72,7 +79,8 @@ public class TaskServiceImpl implements TaskService {
         Optional<Task> taskOptional = taskRepository.findById(id);
 
         if(taskOptional.isEmpty()){
-            return null;
+            throw new RecordNotFoundException("Task with ID " + id + " not found");
+            //throw new RecordNotFoundException("Oops! your task with ID " + id + " not found");
         }
 
         TaskResponse taskResponse = EntityMapperUtil.mapTaskToTaskResponse(taskOptional.get());
@@ -88,15 +96,29 @@ public class TaskServiceImpl implements TaskService {
     @Override
     public ResponseEntity<ApiResponseDto<TaskResponse>> updateTask(Long id, UpdateTaskDTO taskDTO) {
 
-        Optional<Task> taskOptional = taskRepository.findById(id);
-
-        if(taskOptional.isEmpty()){
-            return null;
+        if(taskDTO == null){
+            throw new BadRequestException("Task request body is invalid");
+            //throw new BadRequestException("Oops! your task request body is invalid");
         }
 
         if(taskDTO.getId() == null){
-            return null;
+            throw new BadRequestException("Task ID is required in request body");
+            //throw new RecordNotFoundException("Oops! your task with ID " + id + " not found in request body");
         }
+
+        if(!taskDTO.getId().equals(id)){
+            throw new BadRequestException("Task request IDs are mismatched");
+            //throw new BadRequestException("Oops! your task request IDs are mismatched");
+        }
+
+        Optional<Task> taskOptional = taskRepository.findById(id);
+
+        if(taskOptional.isEmpty()){
+            throw new RecordNotFoundException("Task with ID " + id + " not found");
+            //throw new RecordNotFoundException("Oops! your task with ID " + id + " not found");
+        }
+
+        validateTitle(taskDTO.getTitle());
 
         Task task = EntityMapperUtil.mapUpdateTaskDTOtoTask(taskDTO);
         Task savedTask = taskRepository.save(task);
@@ -116,10 +138,29 @@ public class TaskServiceImpl implements TaskService {
         Optional<Task> taskOptional = taskRepository.findById(id);
 
         if(taskOptional.isEmpty()){
-            return null;
+            throw new RecordNotFoundException("Task with ID " + id + " not found");
         }
         taskRepository.deleteById(id);
         return ResponseEntity.noContent().build();
+    }
+
+    private void validateTitle(String title) {
+        if (title == null) {
+            throw new BadRequestException("Title is required");
+            //throw new BadRequestException("Title is required");
+            //Oops! Your request title parameter is either incomplete or invalid
+        }
+
+        String trimmedTitle = title.trim();
+        if (trimmedTitle.isEmpty()) {
+            //throw new BadRequestException("Oops! Your request title parameter is invalid");
+            throw new BadRequestException("Title is required");
+        }
+
+        if (title.length() > 255) {
+            throw new BadRequestException("Title must not exceed 255 characters");
+            //throw new BadRequestException("Oops! Your request title characters exceeds 255");
+        }
     }
 
 
