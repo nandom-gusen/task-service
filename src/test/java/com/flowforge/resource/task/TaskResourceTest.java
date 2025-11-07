@@ -7,7 +7,8 @@ import com.flowforge.dto.request.UpdateTaskDTO;
 import com.flowforge.dto.response.ApiResponseDto;
 import com.flowforge.dto.response.TaskResponse;
 import com.flowforge.enums.TaskStatus;
-import com.flowforge.security.jwt.JwtUtils;
+import com.flowforge.exceptions.BadRequestException;
+import com.flowforge.exceptions.RecordNotFoundException;
 import com.flowforge.service.task.TaskService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletRequest;
@@ -20,7 +21,6 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.web.config.EnableSpringDataWebSupport;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -29,16 +29,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 
-import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
-import static org.springframework.data.web.config.EnableSpringDataWebSupport.PageSerializationMode.VIA_DTO;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 
-@Import(SpringDataWebConfig.class)
+@Import({SpringDataWebConfig.class, com.flowforge.exceptions.GlobalExceptionHandler.class})
 @WebMvcTest(controllers = TaskResource.class,
         excludeAutoConfiguration = { org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration.class })
 public class TaskResourceTest {
@@ -234,6 +231,292 @@ public class TaskResourceTest {
         mockMvc.perform(delete("/api/v1/tasks/{id}", taskId))
                 .andExpect(status().isNoContent());
         verify(taskService, times(1)).deleteTask(taskId);
+    }
+
+
+    // VALIDATION TESTS
+    @Test
+    void createTask_shouldReturn400_whenRequestBodyIsNull() throws Exception {
+        // Act & Assert
+        mockMvc.perform(post("/api/v1/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("null"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.name()));
+    }
+
+    @Test
+    void updateTask_shouldReturn400_whenRequestBodyIsNull() throws Exception {
+        // Act & Assert
+        mockMvc.perform(put("/api/v1/tasks/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("null"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.name()));
+    }
+
+    //Title Validation
+    @Test
+    void createTask_shouldReturn400_whenTitleIsNull() throws Exception {
+        // Arrange
+        TaskDTO taskDTO = new TaskDTO();
+        taskDTO.setTitle(null);
+        taskDTO.setDescription("Description");
+        taskDTO.setStatus("TODO");
+
+        when(taskService.createTask(any(TaskDTO.class)))
+                .thenThrow(new BadRequestException("Title is required"));
+
+        // Act & Assert
+        mockMvc.perform(post("/api/v1/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(taskDTO)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.name()))
+                .andExpect(jsonPath("$.message").value("Title is required"));
+    }
+
+    @Test
+    void createTask_shouldReturn400_whenTitleIsBlank() throws Exception {
+        // Arrange
+        TaskDTO taskDTO = new TaskDTO();
+        taskDTO.setTitle("   ");
+        taskDTO.setDescription("Description");
+        taskDTO.setStatus("TODO");
+
+        when(taskService.createTask(any(TaskDTO.class)))
+                .thenThrow(new BadRequestException("Title is required"));
+
+        // Act & Assert
+        mockMvc.perform(post("/api/v1/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(taskDTO)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.name()))
+                .andExpect(jsonPath("$.message").value("Title is required"));
+    }
+
+    @Test
+    void createTask_shouldReturn400_whenTitleExceedsMaxLength() throws Exception {
+        // Arrange
+        String longTitle = "a".repeat(256); // 256 chars, exceeds 255-char limit
+        TaskDTO taskDTO = new TaskDTO();
+        taskDTO.setTitle(longTitle);
+        taskDTO.setDescription("Description");
+        taskDTO.setStatus("TODO");
+
+        when(taskService.createTask(any(TaskDTO.class)))
+                .thenThrow(new BadRequestException("Title must not exceed 255 characters"));
+
+        // Act & Assert
+        mockMvc.perform(post("/api/v1/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(taskDTO)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.name()))
+                .andExpect(jsonPath("$.message").value("Title must not exceed 255 characters"));
+    }
+
+    // Update ID Validation
+    @Test
+    void updateTask_shouldReturn400_whenIdIsNullInRequestBody() throws Exception {
+        // Arrange
+        UpdateTaskDTO updateDTO = new UpdateTaskDTO();
+        updateDTO.setId(null);
+        updateDTO.setTitle("Updated Task");
+
+        when(taskService.updateTask(any(Long.class), any(UpdateTaskDTO.class)))
+                .thenThrow(new BadRequestException("Task ID is required in request body"));
+
+        // Act & Assert
+        mockMvc.perform(put("/api/v1/tasks/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateDTO)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.name()))
+                .andExpect(jsonPath("$.message").value("Task ID is required in request body"));
+    }
+
+    @Test
+    void updateTask_shouldReturn400_whenIdsAreMismatched() throws Exception {
+        // Arrange
+        UpdateTaskDTO updateDTO = new UpdateTaskDTO();
+        updateDTO.setId(10L);
+        updateDTO.setTitle("Updated Task");
+
+        when(taskService.updateTask(any(Long.class), any(UpdateTaskDTO.class)))
+                .thenThrow(new BadRequestException("Task request IDs are mismatched"));
+
+        // Act & Assert
+        mockMvc.perform(put("/api/v1/tasks/5")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateDTO)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.name()))
+                .andExpect(jsonPath("$.message").value("Task request IDs are mismatched"));
+    }
+
+    // Update Title Validation
+    @Test
+    void updateTask_shouldReturn400_whenTitleIsNull() throws Exception {
+        // First create a task
+        TaskDTO createDTO = new TaskDTO();
+        createDTO.setTitle("Original Task");
+        createDTO.setStatus("TODO");
+
+
+        mockMvc.perform(post("/api/v1/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createDTO)))
+                .andExpect(status().isCreated());
+
+        Long taskId = 1L;
+
+        // Prepare update with null title
+        UpdateTaskDTO updateDTO = new UpdateTaskDTO();
+        updateDTO.setId(taskId);
+        updateDTO.setTitle(null);
+
+        // Act & Assert
+        mockMvc.perform(put("/api/v1/tasks/" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateDTO)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.name()))
+                .andExpect(jsonPath("$.message").value("Title is required"));
+    }
+
+    @Test
+    void updateTask_shouldReturn400_whenTitleIsBlank() throws Exception {
+        // First create a task
+        TaskDTO createDTO = new TaskDTO();
+        createDTO.setTitle("Original Task");
+        createDTO.setStatus("TODO");
+
+        mockMvc.perform(post("/api/v1/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createDTO)))
+                .andExpect(status().isCreated());
+
+        Long taskId = 1L;
+
+        // Prepare update with blank title
+        UpdateTaskDTO updateDTO = new UpdateTaskDTO();
+        updateDTO.setId(taskId);
+        updateDTO.setTitle("   ");
+
+        // Act & Assert
+        mockMvc.perform(put("/api/v1/tasks/" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateDTO)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.name()))
+                .andExpect(jsonPath("$.message").value("Title is required"));
+    }
+
+    @Test
+    void updateTask_shouldReturn400_whenTitleExceedsMaxLength() throws Exception {
+        // First create a task
+        TaskDTO createDTO = new TaskDTO();
+        createDTO.setTitle("Original Task");
+        createDTO.setStatus("TODO");
+
+        mockMvc.perform(post("/api/v1/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createDTO)))
+                .andExpect(status().isCreated());
+
+        Long taskId = 1L;
+
+        // Prepare update with long title
+        String longTitle = "a".repeat(256);
+        UpdateTaskDTO updateDTO = new UpdateTaskDTO();
+        updateDTO.setId(taskId);
+        updateDTO.setTitle(longTitle);
+
+
+        when(taskService.updateTask(any(Long.class), any(UpdateTaskDTO.class)))
+                .thenThrow(new BadRequestException("Title must not exceed 255 characters"));
+
+        // Act & Assert
+        mockMvc.perform(put("/api/v1/tasks/" + taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateDTO)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.name()))
+                .andExpect(jsonPath("$.message").value("Title must not exceed 255 characters"));
+    }
+
+    // NOT FOUND TESTS - Task doesn't exist (matches Issue #3 examples)
+    @Test
+    void getTaskById_shouldReturn404_whenTaskNotFound() throws Exception {
+
+        when(taskService.getTaskById(any(Long.class)))
+                .thenThrow(new RecordNotFoundException("Task with ID 999 not found"));
+
+        // Act & Assert
+        mockMvc.perform(get("/api/v1/tasks/999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(404))
+                .andExpect(jsonPath("$.status").value(HttpStatus.NOT_FOUND.name()))
+                .andExpect(jsonPath("$.message").value("Task with ID 999 not found"));
+    }
+
+    @Test
+    void updateTask_shouldReturn404_whenTaskNotFound() throws Exception {
+        // Arrange
+        UpdateTaskDTO updateDTO = new UpdateTaskDTO();
+        updateDTO.setId(999L);
+        updateDTO.setTitle("Updated Task");
+
+        when(taskService.updateTask(any(Long.class), any(UpdateTaskDTO.class)))
+                .thenThrow(new RecordNotFoundException("Task with ID 999 not found"));
+
+        // Act & Assert
+        mockMvc.perform(put("/api/v1/tasks/999")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateDTO)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(404))
+                .andExpect(jsonPath("$.status").value(HttpStatus.NOT_FOUND.name()))
+                .andExpect(jsonPath("$.message").value("Task with ID 999 not found"));
+    }
+
+    @Test
+    void deleteTask_shouldReturn404_whenTaskNotFound() throws Exception {
+
+        when(taskService.deleteTask(any(Long.class)))
+                .thenThrow(new RecordNotFoundException("Task with ID 999 not found"));
+
+        // Act & Assert
+        mockMvc.perform(delete("/api/v1/tasks/999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(404))
+                .andExpect(jsonPath("$.status").value(HttpStatus.NOT_FOUND.name()))
+                .andExpect(jsonPath("$.message").value("Task with ID 999 not found"));
     }
 
 }
