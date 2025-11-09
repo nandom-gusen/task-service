@@ -73,10 +73,10 @@ public class TaskResource {
     @ResponseStatus(HttpStatus.OK)
     public ResponseEntity<ApiResponseDto<Page<TaskResponse>>> getAllTasks(
             @Parameter(description = "Page number (zero-based)", example = "0")
-            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "1") int page,
 
             @Parameter(description = "Number of records per page", example = "20")
-            @RequestParam(defaultValue = "20") @Min(1) @Max(MAX_PAGE_SIZE) int size,
+            @RequestParam(defaultValue = "20") int size,
 
             @Parameter(description = "Field to sort by", example = "createdAt")
             @RequestParam(defaultValue = "createdAt") String sortBy,

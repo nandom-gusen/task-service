@@ -62,8 +62,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                         extractDefaultMessage(exception.getMessage())));
     }
 
-//    @ExceptionHandler(HttpMessageNotReadableException.class)
-//    public ResponseEntity handleBadRequestExceptions(HttpMessageNotReadableException exception, WebRequest webRequest) {
+//    @ExceptionHandler(IllegalArgumentException.class)
+//    public ResponseEntity handleBadRequestExceptions(RuntimeException exception, WebRequest webRequest) {
 //        String requestUrl = webRequest.getContextPath();
 //        log.warn(" {} access through {}", exception.getMessage(), requestUrl);
 //        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
@@ -124,15 +124,18 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity handleIllegalArgumentExceptions(BadRequestException exception, WebRequest webRequest) {
+    public ResponseEntity handleIllegalArgumentExceptions(IllegalArgumentException exception, WebRequest webRequest) {
         String requestUrl = webRequest.getContextPath();
         log.warn(" {} access through {}", exception.getMessage(), requestUrl);
+
+        String errorMessage = extractEnumErrorMessage(exception);
+
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ApiResponseDto<>(
                         false,
                         HttpStatus.BAD_REQUEST.value(),
                         HttpStatus.BAD_REQUEST,
-                        extractDefaultMessage(exception.getMessage())));
+                        errorMessage));
     }
 
     @ExceptionHandler({MethodArgumentTypeMismatchException.class})
@@ -198,6 +201,22 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             //e.printStackTrace();
             return errorString;
         }
+    }
+
+    private static String extractEnumErrorMessage(IllegalArgumentException ex) {
+        String message = ex.getMessage();
+
+        // Check if it's an enum error
+        if (message != null && message.contains("No enum constant")) {
+            // Extract enum class name
+            if (message.contains("TaskStatus")) {
+                return "Invalid status value. Allowed values are: TODO, IN_PROGRESS, IN_REVIEW, DONE, CANCELLED";
+            } else if (message.contains("Priority")) {
+                return "Invalid priority value. Allowed values are: LOW, MEDIUM, HIGH, URGENT";
+            }
+        }
+
+        return "Invalid request body format";
     }
 }
 

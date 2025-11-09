@@ -253,4 +253,73 @@ public class TaskServiceTest {
         verify(taskRepository, never()).save(any(Task.class));
     }
 
+    // PAGINATION VALIDATION TESTS
+    @Test
+    void getAllTasks_shouldThrowException_whenPageIsNegative() {
+        // Act & Assert
+        BadRequestException exception = assertThrows(BadRequestException.class, () -> {
+            taskService.getAllTasks(-1, 20, "createdAt", Sort.Direction.DESC);
+        });
+
+        assertEquals("Page number cannot be negative", exception.getMessage());
+        verify(taskRepository, never()).findAll(any(Pageable.class));
+    }
+
+    @Test
+    void getAllTasks_shouldThrowException_whenSizeIsZero() {
+        // Act & Assert
+        BadRequestException exception = assertThrows(BadRequestException.class, () -> {
+            taskService.getAllTasks(0, 0, "createdAt", Sort.Direction.DESC);
+        });
+
+        assertEquals("Page size must be between 1 and 100", exception.getMessage());
+        verify(taskRepository, never()).findAll(any(Pageable.class));
+    }
+
+    @Test
+    void getAllTasks_shouldThrowException_whenSizeExceedsMax() {
+        // Act & Assert
+        BadRequestException exception = assertThrows(BadRequestException.class, () -> {
+            taskService.getAllTasks(0, 150, "createdAt", Sort.Direction.DESC);
+        });
+
+        assertEquals("Page size must be between 1 and 100", exception.getMessage());
+        verify(taskRepository, never()).findAll(any(Pageable.class));
+    }
+
+    @Test
+    void getAllTasks_shouldThrowException_whenSortFieldIsInvalid() {
+        // Act & Assert
+        BadRequestException exception = assertThrows(BadRequestException.class, () -> {
+            taskService.getAllTasks(0, 20, "invalidField", Sort.Direction.DESC);
+        });
+
+        assertTrue(exception.getMessage().contains("Invalid sort field: invalidField"));
+        assertTrue(exception.getMessage().contains("Allowed fields are:"));
+        verify(taskRepository, never()).findAll(any(Pageable.class));
+    }
+
+    @Test
+    void getAllTasks_shouldThrowException_whenSortFieldIsEmpty() {
+        // Act & Assert
+        BadRequestException exception = assertThrows(BadRequestException.class, () -> {
+            taskService.getAllTasks(0, 20, "", Sort.Direction.DESC);
+        });
+
+        assertEquals("Sort field cannot be empty", exception.getMessage());
+        verify(taskRepository, never()).findAll(any(Pageable.class));
+    }
+
+    @Test
+    void getAllTasks_shouldThrowException_whenSortFieldIsNull() {
+        // Act & Assert
+        BadRequestException exception = assertThrows(BadRequestException.class, () -> {
+            taskService.getAllTasks(0, 20, null, Sort.Direction.DESC);
+        });
+
+        assertEquals("Sort field cannot be empty", exception.getMessage());
+        verify(taskRepository, never()).findAll(any(Pageable.class));
+    }
+
+
 }
