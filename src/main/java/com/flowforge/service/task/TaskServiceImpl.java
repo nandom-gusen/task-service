@@ -57,7 +57,8 @@ public class TaskServiceImpl implements TaskService {
     @Override
     public ResponseEntity<ApiResponseDto<Page<TaskResponse>>> getAllTasks(int page, int size, String sortBy, Sort.Direction sortDir) {
 
-        Utils.validateSortField(sortBy);
+        //Utils.validateSortField(sortBy);
+        Utils.validatePaginationParameters(page, size, sortBy);
         Pageable pageable = PageRequest.of(page, size, Sort.by(sortDir, sortBy));
 
         Page<Task> taskPage = taskRepository.findAll(pageable);

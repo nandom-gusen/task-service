@@ -15,6 +15,7 @@ import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -29,6 +30,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -54,6 +56,8 @@ public class TaskResourceTest {
 
     @BeforeEach
     void forwardFilterChain() throws Exception {
+        Mockito.reset(taskService);
+
         // make the mocked filter call the filter chain so requests reach the controller
         doAnswer(invocation -> {
             ServletRequest req = invocation.getArgument(0);
@@ -467,7 +471,7 @@ public class TaskResourceTest {
                 .andExpect(jsonPath("$.message").value("Title must not exceed 255 characters"));
     }
 
-    // NOT FOUND TESTS - Task doesn't exist (matches Issue #3 examples)
+
     @Test
     void getTaskById_shouldReturn404_whenTaskNotFound() throws Exception {
 
@@ -517,6 +521,136 @@ public class TaskResourceTest {
                 .andExpect(jsonPath("$.code").value(404))
                 .andExpect(jsonPath("$.status").value(HttpStatus.NOT_FOUND.name()))
                 .andExpect(jsonPath("$.message").value("Task with ID 999 not found"));
+    }
+
+    // PAGINATION VALIDATION TESTS
+    @Test
+    void getAllTasks_shouldReturn400_whenPageIsNegative() throws Exception {
+        when(taskService.getAllTasks(anyInt(), anyInt(), anyString(), any(Sort.Direction.class)))
+                .thenThrow(new BadRequestException("Page number cannot be negative"));
+
+        // Act & Assert
+        mockMvc.perform(get("/api/v1/tasks")
+                        .param("page", "-1")
+                        .param("size", "20")
+                        .param("sortBy", "createdAt")
+                        .param("sortDir", "DESC"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.name()))
+                .andExpect(jsonPath("$.message").value("Page number cannot be negative"));
+
+        verify(taskService, times(1)).getAllTasks(anyInt(), anyInt(), anyString(), any(Sort.Direction.class));
+    }
+
+    @Test
+    void getAllTasks_shouldReturn400_whenSizeIsZero() throws Exception {
+        when(taskService.getAllTasks(anyInt(), anyInt(), anyString(), any(Sort.Direction.class)))
+                .thenThrow(new BadRequestException("Page size must be between 1 and 100"));
+
+        // Act & Assert
+        mockMvc.perform(get("/api/v1/tasks")
+                        .param("page", "0")
+                        .param("size", "0")
+                        .param("sortBy", "createdAt")
+                        .param("sortDir", "DESC"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.name()))
+                .andExpect(jsonPath("$.message").value("Page size must be between 1 and 100"));
+    }
+
+    @Test
+    void getAllTasks_shouldReturn400_whenSizeExceedsMax() throws Exception {
+        when(taskService.getAllTasks(anyInt(), anyInt(), anyString(), any(Sort.Direction.class)))
+                .thenThrow(new BadRequestException("Page size must be between 1 and 100"));
+
+        // Act & Assert
+        mockMvc.perform(get("/api/v1/tasks")
+                        .param("page", "0")
+                        .param("size", "150")
+                        .param("sortBy", "createdAt")
+                        .param("sortDir", "DESC"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.name()))
+                .andExpect(jsonPath("$.message").value("Page size must be between 1 and 100"));
+    }
+
+    @Test
+    void getAllTasks_shouldReturn400_whenSortFieldIsInvalid() throws Exception {
+        when(taskService.getAllTasks(anyInt(), anyInt(), anyString(), any(Sort.Direction.class)))
+                .thenThrow(new BadRequestException("Invalid sort field: invalidField. Allowed fields are: id, title, description, status, priority, createdAt, completedAt, dueDate"));
+
+        // Act & Assert
+        mockMvc.perform(get("/api/v1/tasks")
+                        .param("page", "0")
+                        .param("size", "20")
+                        .param("sortBy", "invalidField")
+                        .param("sortDir", "DESC"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.name()))
+                .andExpect(jsonPath("$.message").value(containsString("Invalid sort field: invalidField")))
+                .andExpect(jsonPath("$.message").value(containsString("Allowed fields are:")));
+    }
+
+    @Test
+    void getAllTasks_shouldReturn400_whenSortFieldIsEmpty() throws Exception {
+        when(taskService.getAllTasks(anyInt(), anyInt(), anyString(), any(Sort.Direction.class)))
+                .thenThrow(new BadRequestException("Sort field cannot be empty"));
+
+        // Act & Assert
+        mockMvc.perform(get("/api/v1/tasks")
+                        .param("page", "0")
+                        .param("size", "20")
+                        .param("sortBy", "")
+                        .param("sortDir", "DESC"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.name()))
+                .andExpect(jsonPath("$.message").value("Sort field cannot be empty"));
+    }
+
+    @Test
+    void getAllTasks_shouldReturn200_whenPaginationParametersAreValid() throws Exception {
+        // Arrange
+        TaskResponse task1 = new TaskResponse();
+        task1.setId(1L);
+        task1.setTitle("Task 1");
+        task1.setStatus(TaskStatus.TODO.label);
+
+        Page<TaskResponse> taskPage = new PageImpl<>(Arrays.asList(task1));
+
+        ApiResponseDto<Page<TaskResponse>> apiResponse = new ApiResponseDto<>(
+                true,
+                HttpStatus.OK.value(),
+                HttpStatus.OK,
+                "Success",
+                taskPage
+        );
+
+        when(taskService.getAllTasks(0, 50, "title", Sort.Direction.ASC))
+                .thenReturn(org.springframework.http.ResponseEntity.ok(apiResponse));
+
+        // Act & Assert
+        mockMvc.perform(get("/api/v1/tasks")
+                        .param("page", "0")
+                        .param("size", "50")
+                        .param("sortBy", "title")
+                        .param("sortDir", "ASC"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.status").value(HttpStatus.OK.name()))
+                .andExpect(jsonPath("$.data.content[0].title").value("Task 1"));
+
+        verify(taskService, times(1)).getAllTasks(0, 50, "title", Sort.Direction.ASC);
     }
 
 }
